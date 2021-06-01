@@ -6,13 +6,19 @@ const UserSchema = new mongoose.Schema(
 	{
 		username: {
 			type: String,
+			unique: true,
 			required: true,
 			min: 6,
 			max: 15,
 		},
 		email: {
 			type: String,
+			unique: true,
 			required: true,
+		},
+		name: {
+			type: String,
+			max: 20,
 		},
 		bio: {
 			type: String,
@@ -26,7 +32,6 @@ const UserSchema = new mongoose.Schema(
 		},
 		role: {
 			type: String,
-			enum: ["user", "admin"],
 			default: "user",
 		},
 		posts: [{ type: mongoose.Schema.Types.ObjectId, ref: "Post" }],

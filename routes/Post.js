@@ -14,27 +14,21 @@ postRouter.post(
 		await post.save((err) => {
 			if (err)
 				res.status(500).json({
-					message: {
-						msgBody: "Error has occured",
-						msgError: true,
-					},
+					message: "Error has occured",
+					success: false,
 				});
 			else {
 				req.user.posts.push(post);
 				req.user.save((err) => {
 					if (err)
 						res.status(500).json({
-							message: {
-								msgBody: "Error has occured",
-								msgError: true,
-							},
+							message: "Error has occured",
+							success: false,
 						});
 					else
 						res.status(200).json({
-							message: {
-								msgBody: "Successfully created post",
-								msgError: false,
-							},
+							message: "Post created Successfully",
+							success: true,
 						});
 				});
 			}
@@ -65,10 +59,8 @@ postRouter.delete(
 							req.user.save((err) => {
 								if (err)
 									res.status(500).json({
-										message: {
-											msgBody: "Error has occured",
-											msgError: true,
-										},
+										message: "Error has occured",
+										success: false,
 									});
 							});
 						} else {
@@ -78,10 +70,8 @@ postRouter.delete(
 								user.save((err) => {
 									if (err)
 										res.status(500).json({
-											message: {
-												msgBody: "Error has occured",
-												msgError: true,
-											},
+											message: "Error has occured",
+											success: false,
 										});
 								});
 							}
@@ -94,10 +84,8 @@ postRouter.delete(
 					});
 				} else {
 					res.status(403).json({
-						message: {
-							msgBody: "Unauthorized",
-							msgError: true,
-						},
+						message: "Unauthorized",
+						success: false,
 					});
 				}
 			}
@@ -129,7 +117,7 @@ postRouter.put(
 			} else {
 				res.status(403).json({
 					message: "unauthorized",
-					success: "false",
+					success: false,
 				});
 			}
 			next();
@@ -228,14 +216,61 @@ postRouter.get("/all", (req, res) => {
 			if (err)
 				res.status(500).json({
 					message: {
-						msgBody: "Error has occured",
-						msgError: true,
+						message: "Error has occured",
+						success: false,
 					},
 				});
 			else {
-				res.status(200).json({ posts: document, success: true });
+				res.status(200).json({
+					posts: document,
+					message: "All posts successfully fetched",
+					success: true,
+				});
 			}
 		});
+});
+
+//get timeline
+postRouter.get(
+	"/timeline",
+	passport.authenticate("jwt", { session: false }),
+	async (req, res) => {
+		try {
+			const currentUser = await User.findOne({
+				username: req.user.username,
+			});
+			const userPosts = await Post.find({ author: req.user.username });
+			const friendPosts = await Promise.all(
+				currentUser.following.map(async (friendsID) => {
+					const friend = await User.findById(friendsID);
+					return Post.find({ author: friend.username });
+				})
+			);
+			res.json({
+				posts: userPosts.concat(...friendPosts),
+				message: "Posts successfully fetched",
+				success: true,
+			});
+		} catch (err) {
+			res.status(500).json(err);
+		}
+	}
+);
+
+postRouter.get("/dashboard/:username", async (req, res) => {
+	try {
+		const userPosts = await Post.find({ author: req.params.username });
+		res.json({
+			posts: userPosts,
+			message: "Posts successfully fetched",
+			success: true,
+		});
+	} catch (err) {
+		res.status(500).json({
+			message: err.message,
+			success: false,
+		});
+	}
 });
 
 module.exports = postRouter;
