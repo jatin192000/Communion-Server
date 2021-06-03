@@ -24,12 +24,29 @@ const UserSchema = new mongoose.Schema(
 			type: String,
 			max: 50,
 		},
-		profilePicture: String,
-		coverPicture: String,
+		website: {
+			type: String,
+			max: 100,
+		},
+		location: {
+			type: String,
+			max: 30,
+		},
+		profilePicture: {
+			type: String,
+			default: "avatar.png",
+		},
+		coverPicture: {
+			type: String,
+			default: "noCover.png",
+		},
 		password: {
 			type: String,
 			required: true,
 		},
+		communities: [
+			{ type: mongoose.Schema.Types.ObjectId, ref: "Community" },
+		],
 		role: {
 			type: String,
 			default: "user",
@@ -65,11 +82,14 @@ UserSchema.methods.comparePassword = function (password, cb) {
 UserSchema.methods.getResetPasswordToken = function () {
 	const resetToken = crypto.randomBytes(20).toString("hex");
 
+	// Hash token (private key) and save to database
 	this.resetPasswordToken = crypto
 		.createHash("sha256")
 		.update(resetToken)
 		.digest("hex");
-	this.resetPasswordExpire = Date.now() + 10 * (3600 * 1000); // Ten Hours
+
+	// Set token expire date
+	this.resetPasswordExpire = Date.now() + 10 * (60 * 1000); // Ten Minutes
 
 	return resetToken;
 };

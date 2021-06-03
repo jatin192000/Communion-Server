@@ -10,7 +10,8 @@ postRouter.post(
 	passport.authenticate("jwt", { session: false }),
 	async (req, res) => {
 		const post = new Post(req.body);
-		post.author = req.user.username;
+		post.author.username = req.user.username;
+		post.author.profilePicture = req.user.profilePicture;
 		await post.save((err) => {
 			if (err)
 				res.status(500).json({
@@ -49,7 +50,10 @@ postRouter.delete(
 					success: false,
 				});
 			} else {
-				if (req.user.role == "admin" || post.author == req.user._id) {
+				if (
+					req.user.role == "admin" ||
+					post.author.username == req.user.username
+				) {
 					Post.findOneAndRemove({ _id: req.params.id }, (err) => {
 						if (err) {
 							next(err);
@@ -64,8 +68,10 @@ postRouter.delete(
 									});
 							});
 						} else {
-							const user = User.findById(post.author);
-							if (!user) {
+							const user = User.findOne({
+								username: post.author.username,
+							});
+							if (user) {
 								user.posts.pull(post._id);
 								user.save((err) => {
 									if (err)
@@ -73,6 +79,11 @@ postRouter.delete(
 											message: "Error has occured",
 											success: false,
 										});
+								});
+							} else {
+								res.status(500).json({
+									message: "Error has occured",
+									success: false,
 								});
 							}
 						}
@@ -108,7 +119,7 @@ postRouter.put(
 					success: false,
 				});
 			}
-			if (post.author == req.user._id) {
+			if (post.author.username == req.user._id) {
 				await post.updateOne({ $set: req.body });
 				res.status(200).json({
 					message: "the post has been updated",
@@ -239,11 +250,13 @@ postRouter.get(
 			const currentUser = await User.findOne({
 				username: req.user.username,
 			});
-			const userPosts = await Post.find({ author: req.user.username });
+			const userPosts = await Post.find({
+				"author.username": req.user.username,
+			});
 			const friendPosts = await Promise.all(
 				currentUser.following.map(async (friendsID) => {
 					const friend = await User.findById(friendsID);
-					return Post.find({ author: friend.username });
+					return Post.find({ "author.username": friend.username });
 				})
 			);
 			res.json({
@@ -259,11 +272,33 @@ postRouter.get(
 
 postRouter.get("/dashboard/:username", async (req, res) => {
 	try {
-		const userPosts = await Post.find({ author: req.params.username });
-		res.json({
-			posts: userPosts,
-			message: "Posts successfully fetched",
-			success: true,
+		await Post.find({ "author.username": req.params.username }).then(
+			(userPosts) => {
+				res.json({
+					posts: userPosts,
+					message: "Posts successfully fetched",
+					success: true,
+				});
+			}
+		);
+	} catch (err) {
+		res.status(500).json({
+			message: err.message,
+			success: false,
+		});
+	}
+});
+
+postRouter.get("/dashboardCommunity/:username", async (req, res) => {
+	try {
+		await Post.find({
+			"community.username": req.params.username,
+		}).then((userPosts) => {
+			res.json({
+				posts: userPosts,
+				message: "Posts successfully fetched",
+				success: true,
+			});
 		});
 	} catch (err) {
 		res.status(500).json({

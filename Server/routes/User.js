@@ -17,7 +17,7 @@ const signToken = (userID) => {
 			sub: userID,
 		},
 		process.env.JWT_KEY,
-		{ expiresIn: process.env.JWT_EXPIRE }
+		{ expiresIn: "10h" }
 	);
 };
 
@@ -131,10 +131,11 @@ userRouter.put(
 		} else if (req.user._id == req.params.id) {
 			await User.findByIdAndUpdate(req.params.id, {
 				$set: req.body,
-			});
-			res.status(200).json({
-				message: "Profile updated",
-				success: true,
+			}).then(() => {
+				res.status(200).json({
+					message: "Profile updated",
+					success: true,
+				});
 			});
 		} else {
 			res.status(401).json({
@@ -228,6 +229,44 @@ userRouter.get("/username/:username", async (req, res) => {
 				success: false,
 			});
 		res.status(200).json(other);
+	} catch (err) {
+		res.status(500).json({
+			message: err.message,
+			success: false,
+		});
+	}
+});
+
+//get profile pic by ID
+userRouter.get("/profile/:id", async (req, res) => {
+	try {
+		const user = await User.findById(req.params.id);
+		const { profilePicture } = user._doc;
+		if (!user)
+			res.status(404).json({
+				message: "user not found",
+				success: false,
+			});
+		res.status(200).json({ profilePicture });
+	} catch (err) {
+		res.status(500).json({
+			message: err.message,
+			success: false,
+		});
+	}
+});
+
+//get followers by ID
+userRouter.get("/followers/:id", async (req, res) => {
+	try {
+		const user = await User.findById(req.params.id);
+		const { followers, following } = user._doc;
+		if (!user)
+			res.status(404).json({
+				message: "user not found",
+				success: false,
+			});
+		res.status(200).json({ followers, following });
 	} catch (err) {
 		res.status(500).json({
 			message: err.message,
@@ -405,6 +444,8 @@ userRouter.post("/forgotpassword", async (req, res) => {
 		});
 	}
 });
+
+//resetpassword
 userRouter.put("/passwordreset/:resetToken", async (req, res) => {
 	const resetPasswordToken = crypto
 		.createHash("sha256")
@@ -412,28 +453,28 @@ userRouter.put("/passwordreset/:resetToken", async (req, res) => {
 		.digest("hex");
 
 	try {
-		const user = await User.findOne({
+		await User.findOne({
 			resetPasswordToken,
 			resetPasswordExpire: { $gt: Date.now() },
+		}).then(async (user) => {
+			if (user) {
+				user.password = req.body.password;
+				user.resetPasswordToken = undefined;
+				user.resetPasswordExpire = undefined;
+
+				await user.save().then(
+					res.status(201).json({
+						message: "Password Reset Success",
+						success: true,
+					})
+				);
+			} else {
+				res.status(400).json({
+					message: "Invalid Reset Token",
+					success: false,
+				});
+			}
 		});
-
-		if (!user) {
-			res.status(400).json({
-				message: "Invalid Reset Token",
-				success: false,
-			});
-		} else {
-			user.password = req.body.password;
-			user.resetPasswordToken = undefined;
-			user.resetPasswordExpire = undefined;
-
-			await user.save().then(
-				res.status(201).json({
-					message: "Password Reset Success",
-					success: true,
-				})
-			);
-		}
 	} catch (error) {
 		console.log(error.message);
 	}
