@@ -6,10 +6,21 @@ const CommunitySchema = new mongoose.Schema(
 			type: String,
 			unique: true,
 			required: true,
-			min: 6,
-			max: 15,
+			min: 5,
+			max: 25,
 		},
-		admin: [{ type: String }],
+		admin: [
+			{
+				username: { type: String },
+				profilePicture: { type: String },
+			},
+		],
+		moderators: [
+			{
+				username: { type: String },
+				profilePicture: { type: String },
+			},
+		],
 		name: {
 			type: String,
 			max: 20,
@@ -17,6 +28,10 @@ const CommunitySchema = new mongoose.Schema(
 		about: {
 			type: String,
 			max: 200,
+		},
+		rules: {
+			type: String,
+			max: 1000,
 		},
 		profilePicture: {
 			type: String,

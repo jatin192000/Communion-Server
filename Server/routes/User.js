@@ -1,3 +1,5 @@
+const fs = require("fs");
+
 const express = require("express");
 const userRouter = express.Router();
 const passport = require("passport");
@@ -9,6 +11,7 @@ const JWT = require("jsonwebtoken");
 const User = require("../models/User");
 const sendEmail = require("../utils/sendMail");
 const crypto = require("crypto");
+const Post = require("../models/Post");
 
 const signToken = (userID) => {
 	return JWT.sign(
@@ -279,7 +282,7 @@ userRouter.get("/followers/:id", async (req, res) => {
 
 const storage = multer.diskStorage({
 	destination: function (req, file, cb) {
-		cb(null, "./client/public/Images");
+		cb(null, "../client/public/Images");
 	},
 	filename: function (req, file, cb) {
 		cb(null, uuidv4() + "-" + Date.now() + path.extname(file.originalname));
@@ -291,22 +294,60 @@ const fileFilter = (req, file, cb) => {
 	if (allowedFileTypes.includes(file.mimetype)) {
 		cb(null, true);
 	} else {
-		cb(null, false);
+		cb(
+			{
+				success: false,
+				message:
+					"Invalid file type. Only jpg, png, jpeg image files are allowed.",
+			},
+			false
+		);
 	}
 };
 
-var upload = multer({ storage, limits: { fileSize: 1000000 }, fileFilter });
+var upload = multer({
+	storage,
+	limits: { fileSize: 15 * 1024 * 1024 * 1024 },
+	fileFilter,
+});
 
-userRouter
-	.route("/uploadProfile/:id")
-	.put(
-		upload.single("profile"),
-		passport.authenticate("jwt", { session: false }),
-		async (req, res) => {
+userRouter.route("/uploadProfile").post(
+	upload.single("profile", function (error) {
+		if (error) {
+			if (error.code == "LIMIT_FILE_SIZE") {
+				return res.status(500).json({
+					message:
+						"File Size is too large. Allowed file size is 15MB",
+					success: false,
+				});
+			}
+		}
+	}),
+	passport.authenticate("jwt", { session: false }),
+	async (req, res) => {
+		if (!req.file) {
+			return res.status(404).json({
+				message: "File Not Uploaded",
+				success: false,
+			});
+		} else {
 			const photo = req.file.filename;
-			if (req.params.id == req.user._id) {
-				const user = await User.findById(req.params.id);
+			await User.findById(req.user._id).then(async (user) => {
+				if (user.profilePicture != "avatar.png") {
+					try {
+						fs.unlinkSync(
+							`../client/public/Images/${user.profilePicture}`
+						);
+					} catch (err) {
+						console.log("File not Found");
+					}
+				}
 				user.profilePicture = photo;
+				user.posts.forEach(async (element) => {
+					const post = await Post.findById(element);
+					post.author.profilePicture = photo;
+					post.save();
+				});
 				user.save()
 					.then(() =>
 						res.status(200).json({
@@ -319,40 +360,43 @@ userRouter
 							.status(500)
 							.json({ message: err.message, success: false })
 					);
-			} else {
-				res.status(401).json({
-					message: "Unauthorized",
-					success: false,
-				});
-			}
+			});
 		}
-	);
+	}
+);
+
 userRouter
-	.route("/uploadCover/:id")
-	.put(
+	.route("/uploadCover")
+	.post(
 		upload.single("cover"),
 		passport.authenticate("jwt", { session: false }),
 		async (req, res) => {
-			const photo = req.file.filename;
-			if (req.params.id == req.user._id) {
-				const user = await User.findById(req.params.id);
-				user.coverPicture = photo;
-				user.save()
-					.then(() =>
-						res.status(200).json({
-							message: "Cover Picture Uploaded",
-							success: true,
-						})
-					)
-					.catch((err) =>
-						res
-							.status(500)
-							.json({ message: err.message, success: false })
-					);
-			} else {
-				res.status(401).json({
-					message: "Unauthorized",
+			if (!req.file) {
+				res.status(404).json({
+					message: "File Not Uploaded",
 					success: false,
+				});
+			} else {
+				const photo = req.file.filename;
+				await User.findById(req.user._id).then((user) => {
+					if (user.coverPicture != "noCover.png") {
+						fs.unlinkSync(
+							`../client/public/Images/${user.coverPicture}`
+						);
+					}
+					user.coverPicture = photo;
+					user.save()
+						.then(() =>
+							res.status(200).json({
+								message: "Cover Picture Uploaded",
+								success: true,
+							})
+						)
+						.catch((err) =>
+							res
+								.status(500)
+								.json({ message: err.message, success: false })
+						);
 				});
 			}
 		}
@@ -381,13 +425,15 @@ userRouter.get(
 	"/authenticated",
 	passport.authenticate("jwt", { session: false }),
 	(req, res) => {
-		const { _id, username, role } = req.user;
+		const { _id, username, role, profilePicture, coverPicture } = req.user;
 		res.status(200).json({
 			isAuthenticated: true,
 			user: {
 				_id,
 				username,
 				role,
+				profilePicture,
+				coverPicture,
 			},
 			message: "User Authenticated",
 			success: true,

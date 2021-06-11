@@ -13,7 +13,7 @@ const PostSchema = new mongoose.Schema(
 		title: {
 			type: String,
 			required: [true, "Title of post is required"],
-			max: 50,
+			max: 200,
 		},
 		body: {
 			type: String,
