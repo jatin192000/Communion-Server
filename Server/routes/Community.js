@@ -1,39 +1,58 @@
+const fs = require("fs");
 const express = require("express");
 const communityRouter = express.Router();
 const passport = require("passport");
 const Community = require("../models/Community");
 const User = require("../models/User");
 const Post = require("../models/Post");
+const multer = require("multer");
+const { v4: uuidv4 } = require("uuid");
+let path = require("path");
 
 //create community
 communityRouter.post(
 	"/create",
 	passport.authenticate("jwt", { session: false }),
 	async (req, res) => {
-		const community = new Community(req.body);
-		community.admin.push({
-			username: req.user.username,
-			profilePicture: req.user.profilePicture,
-		});
-		await community.save((err) => {
+		const { username } = req.body;
+		Community.findOne({ username }, async (err, community) => {
 			if (err)
 				res.status(500).json({
 					message: "Error has occured",
 					success: false,
 				});
+			else if (community)
+				res.status(400).json({
+					message: "Username is Already Taken",
+					success: false,
+				});
 			else {
-				req.user.communities.push(community);
-				req.user.save((err) => {
+				const community = new Community(req.body);
+				community.admin.push({
+					username: req.user.username,
+					profilePicture: req.user.profilePicture,
+				});
+				await community.save((err) => {
 					if (err)
 						res.status(500).json({
 							message: "Error has occured",
 							success: false,
 						});
-					else
-						res.status(200).json({
-							message: "Community created Successfully",
-							success: true,
+					else {
+						req.user.communities.push(community);
+						req.user.save((err) => {
+							if (err)
+								res.status(500).json({
+									message: "Error has occured",
+									success: false,
+								});
+							else
+								res.status(200).json({
+									message: "Community created Successfully",
+									success: true,
+								});
 						});
+					}
 				});
 			}
 		});
@@ -375,30 +394,69 @@ communityRouter.put(
 );
 
 //get all communities
-communityRouter.get("/all", (req, res) => {
-	Community.find({})
-		.populate("communities")
-		.exec((err, document) => {
-			if (err)
-				res.status(500).json({
-					message: {
-						message: "Error has occured",
-						success: false,
-					},
-				});
-			else {
-				res.status(200).json({
-					communities: document,
-					message: "All communitys successfully fetched",
-					success: true,
-				});
-			}
+communityRouter.get("/all", async (req, res) => {
+	try {
+		await Community.find({})
+			.populate("communities")
+			.exec((err, document) => {
+				if (err)
+					res.status(500).json({
+						message: {
+							message: "Error has occured",
+							success: false,
+						},
+					});
+				else {
+					res.status(200).json({
+						communities: document,
+						message: "All communities successfully fetched",
+						success: true,
+					});
+				}
+			});
+	} catch (err) {
+		console.log(err.message);
+	}
+});
+
+//get community data
+communityRouter.get("/community/:username", async (req, res) => {
+	const community = await Community.findOne({
+		username: req.params.username,
+	});
+	if (community) {
+		res.status(200).json({
+			community: community,
+			message: "Community successfully fetched",
+			success: true,
 		});
+	} else {
+		res.status(404).json({
+			message: "Community not found",
+			success: false,
+		});
+	}
+});
+
+communityRouter.get("/communityID/:id", async (req, res) => {
+	const community = await Community.findById(req.params.id);
+	if (community) {
+		res.status(200).json({
+			community: community,
+			message: "Community successfully fetched",
+			success: true,
+		});
+	} else {
+		res.status(404).json({
+			message: "Community not found",
+			success: false,
+		});
+	}
 });
 
 //create post on community
 communityRouter.post(
-	"/:username/createPost",
+	"/createPost/:username",
 	passport.authenticate("jwt", { session: false }),
 	async (req, res) => {
 		const community = await Community.findOne({
@@ -445,7 +503,7 @@ communityRouter.post(
 );
 
 communityRouter.put(
-	"/:username/follow",
+	"/follow/:username",
 	passport.authenticate("jwt", { session: false }),
 	async (req, res) => {
 		try {
@@ -481,5 +539,133 @@ communityRouter.put(
 		}
 	}
 );
+
+//user image upload
+
+const storage = multer.diskStorage({
+	destination: function (req, file, cb) {
+		cb(null, "../client/public/Images");
+	},
+	filename: function (req, file, cb) {
+		cb(null, uuidv4() + "-" + Date.now() + path.extname(file.originalname));
+	},
+});
+
+const fileFilter = (req, file, cb) => {
+	const allowedFileTypes = ["image/jpeg", "image/jpg", "image/png"];
+	if (allowedFileTypes.includes(file.mimetype)) {
+		cb(null, true);
+	} else {
+		cb(
+			{
+				success: false,
+				message:
+					"Invalid file type. Only jpg, png, jpeg image files are allowed.",
+			},
+			false
+		);
+	}
+};
+
+var upload = multer({
+	storage,
+	limits: { fileSize: 15 * 1024 * 1024 * 1024 },
+	fileFilter,
+});
+
+communityRouter.route("/uploadProfile/:id").post(
+	upload.single("profile", function (error) {
+		if (error) {
+			if (error.code == "LIMIT_FILE_SIZE") {
+				return res.status(500).json({
+					message:
+						"File Size is too large. Allowed file size is 15MB",
+					success: false,
+				});
+			}
+		}
+	}),
+	passport.authenticate("jwt", { session: false }),
+	async (req, res) => {
+		if (!req.file) {
+			return res.status(404).json({
+				message: "File Not Uploaded",
+				success: false,
+			});
+		} else {
+			const photo = req.file.filename;
+			await Community.findById(req.params.id).then(async (community) => {
+				if (community.profilePicture != "community.svg") {
+					try {
+						fs.unlinkSync(
+							`../client/public/Images/${community.profilePicture}`
+						);
+					} catch (err) {
+						console.log("File not Found");
+					}
+				}
+				community.profilePicture = photo;
+				community.posts.forEach(async (element) => {
+					const post = await Post.findById(element);
+					if (post) {
+						post.community.profilePicture = photo;
+						post.save();
+					}
+				});
+				community
+					.save()
+					.then(() =>
+						res.status(200).json({
+							message: "Profile Picture Uploaded",
+							success: true,
+						})
+					)
+					.catch((err) =>
+						res
+							.status(500)
+							.json({ message: err.message, success: false })
+					);
+			});
+		}
+	}
+);
+
+communityRouter
+	.route("/uploadCover/:id")
+	.post(
+		upload.single("cover"),
+		passport.authenticate("jwt", { session: false }),
+		async (req, res) => {
+			if (!req.file) {
+				res.status(404).json({
+					message: "File Not Uploaded",
+					success: false,
+				});
+			} else {
+				const photo = req.file.filename;
+				await Community.findById(req.params.id).then((community) => {
+					if (community.coverPicture != "communityCover.svg") {
+						fs.unlinkSync(
+							`../client/public/Images/${community.coverPicture}`
+						);
+					}
+					community.coverPicture = photo;
+					community
+						.save()
+						.then(() =>
+							res.status(200).json({
+								message: "Cover Picture Uploaded",
+								success: true,
+							})
+						)
+						.catch((err) =>
+							res
+								.status(500)
+								.json({ message: err.message, success: false })
+						);
+				});
+			}
+		}
+	);
 
 module.exports = communityRouter;

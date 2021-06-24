@@ -11,10 +11,12 @@ const CommentSchema = new mongoose.Schema(
 			max: 1000,
 		},
 		upvotes: {
-			type: Number,
+			type: Array,
+			default: [],
 		},
 		downvotes: {
-			type: Number,
+			type: Array,
+			default: [],
 		},
 	},
 	{ timestamps: true }

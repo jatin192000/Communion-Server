@@ -35,11 +35,11 @@ const CommunitySchema = new mongoose.Schema(
 		},
 		profilePicture: {
 			type: String,
-			default: "avatar.png",
+			default: "community.svg",
 		},
 		coverPicture: {
 			type: String,
-			default: "noCover.png",
+			default: "communityCover.svg",
 		},
 		tags: [{ type: String }],
 		posts: [{ type: mongoose.Schema.Types.ObjectId, ref: "Post" }],

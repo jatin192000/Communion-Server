@@ -106,7 +106,6 @@ postRouter.delete(
 								message: "Post successfully deleted",
 								success: true,
 							});
-							next();
 						}
 					);
 				} else {
@@ -257,6 +256,27 @@ postRouter.get("/all", (req, res) => {
 		});
 });
 
+postRouter.get("/post/:id", (req, res) => {
+	Post.findById(req.params.id)
+		.populate("posts")
+		.exec((err, document) => {
+			if (err)
+				res.status(500).json({
+					message: {
+						message: "Error has occured",
+						success: false,
+					},
+				});
+			else {
+				res.status(200).json({
+					post: document,
+					message: "Post successfully fetched",
+					success: true,
+				});
+			}
+		});
+});
+
 //get timeline
 postRouter.get(
 	"/timeline",
@@ -264,32 +284,49 @@ postRouter.get(
 	async (req, res) => {
 		try {
 			const currentUser = await User.findById(req.user._id);
+			const totalPostsId = [];
 			const userPosts = await Post.find({
-				"author.username": req.user.username,
+				"author.username": currentUser.username,
+			});
+			userPosts.forEach((element) => {
+				totalPostsId.push(element._id);
 			});
 			const friendPosts = await Promise.all(
 				currentUser.following.map(async (friendsID) => {
 					const friend = await User.findById(friendsID);
-					return Post.find({ "author.username": friend.username });
+					if (friend.posts) {
+						return Post.find({
+							"author.username": friend.username,
+						});
+					}
 				})
 			);
+			friendPosts.forEach((element) => {
+				totalPostsId.push(element._id);
+			});
 			const communityPosts = await Promise.all(
 				currentUser.communities.map(async (communityID) => {
 					const community = await Community.findById(communityID);
-					return Post.find({
-						"community.username": community.username,
-					});
+					if (community.posts) {
+						return Post.find({
+							"community.username": community.username,
+						});
+					}
 				})
 			);
+			const allPosts = userPosts.concat(...friendPosts);
+			communityPosts.forEach((element) => {
+				if (!totalPostsId.includes(element._id)) {
+					allPosts.concat(...element);
+				}
+			});
 			res.json({
-				posts: userPosts
-					.concat(...friendPosts)
-					.concat(...communityPosts),
+				posts: allPosts,
 				message: "Posts successfully fetched",
 				success: true,
 			});
 		} catch (err) {
-			res.status(500).json(err);
+			res.status(500).json({ message: err.message, success: false });
 		}
 	}
 );
@@ -334,9 +371,9 @@ postRouter.get("/dashboardCommunity/:username", async (req, res) => {
 
 //comment post
 postRouter.put(
-	"/:id/comment",
+	"/comment/:id",
 	passport.authenticate("jwt", { session: false }),
-	async (req, res, next) => {
+	async (req, res) => {
 		try {
 			const comment = new Comment(req.body);
 			comment.author.username = req.user.username;
@@ -350,56 +387,175 @@ postRouter.put(
 					success: true,
 				});
 			});
-			next();
 		} catch (err) {
-			next(err);
+			res.status(500).json({
+				message: err.message,
+				success: false,
+			});
 		}
 	}
 );
 
 //comment delete
 postRouter.delete(
-	"/:id/Deletecomment/:c_id",
+	"/Deletecomment/:id/:c_id",
 	passport.authenticate("jwt", { session: false }),
-	async (req, res, next) => {
+	async (req, res) => {
 		try {
-			await Comment.findById(req.params.c_id).then(
-				async (err, comment) => {
-					if (err) {
-						res.status(500).json({
-							message: "Some error occured",
-							success: false,
+			await Comment.findById(req.params.c_id).then(async (comment) => {
+				if (comment !== undefined) {
+					const post = await Post.findById(req.params.id);
+					if (
+						comment.author === req.user.username ||
+						post.author.username === req.user.username ||
+						req.user.role === "admin"
+					) {
+						await post.updateOne({
+							$pull: { comments: comment._id },
 						});
-					} else if (comment !== undefined) {
-						if (comment.author.username == req.user.username) {
-							await Comment.findByIdAndDelete(req.params.c_id);
-							await Post.findByIdAndUpdate(req.params.id, {
-								$pull: { comments: comment._id },
-							}).then(() => {
+						post.save();
+						await Comment.findByIdAndDelete(req.params.c_id).then(
+							() => {
 								res.status(200).json({
 									message: "Comment Deleted",
 									success: true,
 								});
-							});
-						} else {
-							res.status(401).json({
-								message: "Unauthorized",
-								success: false,
-							});
-						}
+							}
+						);
 					} else {
-						res.status(404).json({
-							message: "Comment not found",
+						res.status(401).json({
+							message: "Unauthorized",
 							success: false,
 						});
 					}
+				} else {
+					res.status(404).json({
+						message: "Comment not found",
+						success: false,
+					});
 				}
-			);
-			next();
+			});
 		} catch (err) {
-			next(err);
+			res.status(500).json({
+				message: err.message,
+				success: false,
+			});
 		}
 	}
 );
+
+//upvote or undo-upvote a comment
+postRouter.put(
+	"/comment/upvote/:id",
+	passport.authenticate("jwt", { session: false }),
+	async (req, res) => {
+		try {
+			const comment = await Comment.findById(req.params.id);
+			if (
+				!comment.upvotes.includes(req.user._id) &&
+				!comment.downvotes.includes(req.user._id)
+			) {
+				await comment.updateOne({ $push: { upvotes: req.user._id } });
+				res.status(200).json({
+					message: "The comment has been upvoted",
+					success: true,
+				});
+			} else if (
+				!comment.upvotes.includes(req.user._id) &&
+				comment.downvotes.includes(req.user._id)
+			) {
+				await comment.updateOne({ $push: { upvotes: req.user._id } });
+				await comment.updateOne({ $pull: { downvotes: req.user._id } });
+				res.status(200).json({
+					message: "The comment has been upvoted",
+					success: true,
+				});
+			} else {
+				await comment.updateOne({ $pull: { upvotes: req.user._id } });
+				res.status(200).json({
+					message: "The comment has been un-upvoted",
+					success: true,
+				});
+			}
+		} catch (err) {
+			res.status(500).json({
+				message: err.message,
+				success: false,
+			});
+		}
+	}
+);
+
+//downvote or undo-downvote a comment
+postRouter.put(
+	"/comment/downvote/:id",
+	passport.authenticate("jwt", { session: false }),
+	async (req, res) => {
+		try {
+			const comment = await Comment.findById(req.params.id);
+			if (
+				!comment.downvotes.includes(req.user._id) &&
+				!comment.upvotes.includes(req.user._id)
+			) {
+				await comment.updateOne({ $push: { downvotes: req.user._id } });
+				res.status(200).json({
+					message: "The comment has been downvoted",
+					success: true,
+				});
+			} else if (
+				!comment.downvotes.includes(req.user._id) &&
+				comment.upvotes.includes(req.user._id)
+			) {
+				await comment.updateOne({ $push: { downvotes: req.user._id } });
+				await comment.updateOne({ $pull: { upvotes: req.user._id } });
+				res.status(200).json({
+					message: "The comment has been downvoted",
+					success: true,
+				});
+			} else {
+				await comment.updateOne({ $pull: { downvotes: req.user._id } });
+				res.status(200).json({
+					message: "The comment has been un-downvoted",
+					success: true,
+				});
+			}
+		} catch (err) {
+			res.status(200).json({
+				message: "The comment has been un-upvoted",
+				success: false,
+			});
+		}
+	}
+);
+
+//get all post comments
+postRouter.get("/post/:id/comments", (req, res) => {
+	Post.findById(req.params.id)
+		.populate("posts")
+		.exec(async (err, document) => {
+			if (err)
+				res.status(500).json({
+					message: {
+						message: "Error has occured",
+						success: false,
+					},
+				});
+			else {
+				const comments = await Promise.all(
+					document.comments.map(async (commentId) => {
+						const comment = await Comment.findById(commentId);
+						if (comment) {
+							return comment;
+						}
+					})
+				);
+				res.status(200).json({
+					comments: comments,
+					message: "All comments successfully fetched",
+					success: true,
+				});
+			}
+		});
+});
 
 module.exports = postRouter;

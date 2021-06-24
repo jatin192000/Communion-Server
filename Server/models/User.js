@@ -34,7 +34,7 @@ const UserSchema = new mongoose.Schema(
 		},
 		profilePicture: {
 			type: String,
-			default: "avatar.png",
+			default: "avatar.svg",
 		},
 		coverPicture: {
 			type: String,
@@ -78,7 +78,9 @@ UserSchema.methods.comparePassword = function (password, cb) {
 		}
 	});
 };
-
+UserSchema.methods.comparePasswords = async function (password) {
+	return await bcrypt.compare(password, this.password);
+};
 UserSchema.methods.getResetPasswordToken = function () {
 	const resetToken = crypto.randomBytes(20).toString("hex");
 

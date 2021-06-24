@@ -1,5 +1,4 @@
 const fs = require("fs");
-
 const express = require("express");
 const userRouter = express.Router();
 const passport = require("passport");
@@ -151,11 +150,12 @@ userRouter.put(
 
 //change password
 userRouter.put(
-	"/updatePassword/:id",
+	"/updatePassword",
 	passport.authenticate("jwt", { session: false }),
 	async (req, res) => {
-		if (req.user._id == req.params.id) {
-			const user = await User.findById(req.params.id);
+		const user = await User.findById(req.user._id);
+		const isMatch = await user.comparePasswords(req.body.oldPassword);
+		if (isMatch) {
 			user.password = req.body.password;
 			user.save();
 			res.status(200).json({
@@ -163,8 +163,8 @@ userRouter.put(
 				success: true,
 			});
 		} else {
-			res.status(401).json({
-				message: "unauthorized",
+			res.status(200).json({
+				message: "Wrong Password",
 				success: false,
 			});
 		}
@@ -218,20 +218,59 @@ userRouter.put(
 userRouter.get("/username/:username", async (req, res) => {
 	try {
 		const user = await User.findOne({ username: req.params.username });
-		const {
-			password,
-			updatedAt,
-			resetPasswordToken,
-			resetPasswordExpire,
-			__v,
-			...other
-		} = user._doc;
 		if (!user)
 			res.status(404).json({
 				message: "user not found",
 				success: false,
 			});
-		res.status(200).json(other);
+		else {
+			const {
+				password,
+				updatedAt,
+				resetPasswordToken,
+				resetPasswordExpire,
+				__v,
+				...other
+			} = user._doc;
+
+			res.status(200).json({
+				user: other,
+				message: "User Found",
+				success: true,
+			});
+		}
+	} catch (err) {
+		res.status(500).json({
+			message: err.message,
+			success: false,
+		});
+	}
+});
+//get user data by id
+userRouter.get("/id/:id", async (req, res) => {
+	try {
+		const user = await User.findById(req.params.id);
+		if (!user)
+			res.status(404).json({
+				message: "user not found",
+				success: false,
+			});
+		else {
+			const {
+				password,
+				updatedAt,
+				resetPasswordToken,
+				resetPasswordExpire,
+				__v,
+				...other
+			} = user._doc;
+
+			res.status(200).json({
+				user: other,
+				message: "User Found",
+				success: true,
+			});
+		}
 	} catch (err) {
 		res.status(500).json({
 			message: err.message,
@@ -260,16 +299,23 @@ userRouter.get("/profile/:id", async (req, res) => {
 });
 
 //get followers by ID
-userRouter.get("/followers/:id", async (req, res) => {
+userRouter.get("/followers/:username", async (req, res) => {
 	try {
-		const user = await User.findById(req.params.id);
-		const { followers, following } = user._doc;
+		const user = await User.findOne({ username: req.params.username });
 		if (!user)
 			res.status(404).json({
 				message: "user not found",
 				success: false,
 			});
-		res.status(200).json({ followers, following });
+		else {
+			const { followers, following } = user._doc;
+			res.status(200).json({
+				followers,
+				following,
+				message: "successfully executed",
+				success: true,
+			});
+		}
 	} catch (err) {
 		res.status(500).json({
 			message: err.message,
