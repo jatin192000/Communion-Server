@@ -171,6 +171,36 @@ userRouter.put(
 	}
 );
 
+//change password
+userRouter.put(
+	"/updateEmail",
+	passport.authenticate("jwt", { session: false }),
+	async (req, res) => {
+		const user = await User.findById(req.user._id);
+		const isMatch = await user.comparePasswords(req.body.password);
+		if (isMatch) {
+			try {
+				user.email = req.body.email;
+				user.save();
+				res.status(200).json({
+					message: "Email updated",
+					success: true,
+				});
+			} catch (error) {
+				res.status(500).json({
+					message: error.message,
+					success: false,
+				});
+			}
+		} else {
+			res.status(200).json({
+				message: "Wrong Password",
+				success: false,
+			});
+		}
+	}
+);
+
 //follow user
 userRouter.put(
 	"/follow/:id",
@@ -214,6 +244,30 @@ userRouter.put(
 		}
 	}
 );
+
+userRouter.get("/all", async (req, res) => {
+	try {
+		const users = await User.find({}, "username name").exec();
+		if (users) {
+			res.status(200).json({
+				users: users,
+				message: "Users successfully fetched",
+				success: true,
+			});
+		} else {
+			res.status(400).json({
+				message: "Users not found",
+				success: false,
+			});
+		}
+	} catch (err) {
+		res.status(500).json({
+			message: err.message,
+			success: false,
+		});
+	}
+});
+
 //get user data
 userRouter.get("/username/:username", async (req, res) => {
 	try {
@@ -246,6 +300,7 @@ userRouter.get("/username/:username", async (req, res) => {
 		});
 	}
 });
+
 //get user data by id
 userRouter.get("/id/:id", async (req, res) => {
 	try {
