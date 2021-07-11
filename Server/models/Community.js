@@ -43,6 +43,7 @@ const CommunitySchema = new mongoose.Schema(
 		},
 		tags: [{ type: String }],
 		posts: [{ type: mongoose.Schema.Types.ObjectId, ref: "Post" }],
+		reports: [{ type: mongoose.Schema.Types.ObjectId, ref: "Report" }],
 		followers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
 	},
 	{ timestamps: true }

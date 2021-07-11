@@ -8,12 +8,16 @@ const Post = require("../models/Post");
 const multer = require("multer");
 const { v4: uuidv4 } = require("uuid");
 let path = require("path");
+const Data = require("../models/Data");
 
 //create community
 communityRouter.post(
 	"/create",
 	passport.authenticate("jwt", { session: false }),
 	async (req, res) => {
+		var d = new Date();
+		var y = d.getFullYear();
+		var m = d.getMonth();
 		const { username } = req.body;
 		Community.findOne({ username }, async (err, community) => {
 			if (err)
@@ -32,25 +36,47 @@ communityRouter.post(
 					username: req.user.username,
 					profilePicture: req.user.profilePicture,
 				});
-				await community.save((err) => {
+				await community.save(async (err) => {
 					if (err)
 						res.status(500).json({
 							message: "Error has occured",
 							success: false,
 						});
 					else {
+						const dataFind = await Data.find({ year: y });
+						if (dataFind.length > 0) {
+							var newCount = dataFind[0].communities;
+							newCount[m] += 1;
+							await Data.findByIdAndUpdate(dataFind[0]._id, {
+								$set: { communities: newCount },
+							});
+						} else {
+							const dataCreate = new Data({
+								year: y,
+								users: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+								posts: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+								communities: [
+									0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+								],
+								reports: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+								comments: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+							});
+							dataCreate.communities[m] = 1;
+							dataCreate.save();
+						}
 						req.user.communities.push(community);
-						req.user.save((err) => {
+						req.user.save(async (err) => {
 							if (err)
 								res.status(500).json({
 									message: "Error has occured",
 									success: false,
 								});
-							else
+							else {
 								res.status(200).json({
 									message: "Community created Successfully",
 									success: true,
 								});
+							}
 						});
 					}
 				});
@@ -163,54 +189,57 @@ communityRouter.put(
 
 //add admin
 communityRouter.put(
-	"/addAdmin/:id",
+	"/addAdmin/:username",
 	passport.authenticate("jwt", { session: false }),
 	async (req, res, next) => {
 		try {
-			Community.findById(req.params.id).then(async (community) => {
-				if (!community) {
-					res.status(500).json({
-						message: "Community does not exists",
-						success: false,
-					});
-				}
-				const admin1 = community.admin.find(
-					(admin1) => admin1["username"] === req.body.username
-				);
-				if (admin1) {
-					res.status(409).json({
-						message: "Already an admin of this community",
-						success: true,
-					});
-				} else {
-					const admin = community.admin.find(
-						(admin) => admin["username"] === req.user.username
-					);
-
-					if (admin) {
-						await community.admin.push(req.body);
-						User.findOne({ username: req.body.username }).then(
-							async (data) => {
-								if (data) {
-									data.communities.push(community);
-								}
-								await data.save();
-							}
-						);
-						await community.save().then(() => {
-							res.status(200).json({
-								message: "Admin has been added successfully",
-								success: true,
-							});
-						});
-					} else {
-						res.status(403).json({
-							message: "unauthorized",
+			Community.find({ username: req.params.username }).then(
+				async (community) => {
+					if (!community) {
+						res.status(500).json({
+							message: "Community does not exists",
 							success: false,
 						});
 					}
+					const admin1 = community.admin.find(
+						(admin1) => admin1["username"] === req.body.username
+					);
+					if (admin1) {
+						res.status(409).json({
+							message: "Already an admin of this community",
+							success: true,
+						});
+					} else {
+						const admin = community.admin.find(
+							(admin) => admin["username"] === req.user.username
+						);
+
+						if (admin) {
+							await community.admin.push(req.body);
+							User.findOne({ username: req.body.username }).then(
+								async (data) => {
+									if (data) {
+										data.communities.push(community);
+									}
+									await data.save();
+								}
+							);
+							await community.save().then(() => {
+								res.status(200).json({
+									message:
+										"Admin has been added successfully",
+									success: true,
+								});
+							});
+						} else {
+							res.status(403).json({
+								message: "unauthorized",
+								success: false,
+							});
+						}
+					}
 				}
-			});
+			);
 		} catch (err) {
 			next(err);
 		}

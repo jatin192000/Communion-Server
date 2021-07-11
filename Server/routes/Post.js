@@ -5,12 +5,16 @@ const Post = require("../models/Post");
 const User = require("../models/User");
 const Comment = require("../models/Comment");
 const Community = require("../models/Community");
+const Data = require("../models/Data");
 
 //create post
 postRouter.post(
 	"/create",
 	passport.authenticate("jwt", { session: false }),
 	async (req, res) => {
+		var d = new Date();
+		var y = d.getFullYear();
+		var m = d.getMonth();
 		const post = new Post(req.body);
 		post.author.username = req.user.username;
 		post.author.profilePicture = req.user.profilePicture;
@@ -22,17 +26,39 @@ postRouter.post(
 				});
 			else {
 				req.user.posts.push(post);
-				req.user.save((err) => {
+				req.user.save(async (err) => {
 					if (err)
 						res.status(500).json({
 							message: "Error has occured",
 							success: false,
 						});
-					else
+					else {
+						const dataFind = await Data.find({ year: y });
+						if (dataFind.length > 0) {
+							var newCount = dataFind[0].posts;
+							newCount[m] += 1;
+							await Data.findByIdAndUpdate(dataFind[0]._id, {
+								$set: { posts: newCount },
+							});
+						} else {
+							const dataCreate = new Data({
+								year: y,
+								users: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+								posts: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+								communities: [
+									0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+								],
+								reports: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+								comments: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+							});
+							dataCreate.posts[m] = 1;
+							dataCreate.save();
+						}
 						res.status(200).json({
 							message: "Post created Successfully",
 							success: true,
 						});
+					}
 				});
 			}
 		});
@@ -285,45 +311,60 @@ postRouter.get(
 		try {
 			const currentUser = await User.findById(req.user._id);
 			const totalPostsId = [];
-			const userPosts = await Post.find({
-				"author.username": currentUser.username,
-			});
-			userPosts.forEach((element) => {
-				totalPostsId.push(element._id);
-			});
-			const friendPosts = await Promise.all(
-				currentUser.following.map(async (friendsID) => {
-					const friend = await User.findById(friendsID);
-					if (friend.posts) {
-						return Post.find({
-							"author.username": friend.username,
+			Post.countDocuments({}, async function (err, result) {
+				if (err) {
+					console.log(err);
+				} else if (result > 0) {
+					const userPosts = await Post.find({
+						"author.username": currentUser.username,
+					});
+					userPosts.forEach((element) => {
+						totalPostsId.push(element._id);
+					});
+					const friendPosts = currentUser.following.filter(
+						async (friendsID) => {
+							const friend = await User.findById(friendsID);
+							if (friend)
+								return await Post.find({
+									"author.username": friend.username,
+								});
+						}
+					);
+					if (friendPosts) {
+						friendPosts.forEach((element) => {
+							totalPostsId.push(element._id);
 						});
 					}
-				})
-			);
-			friendPosts.forEach((element) => {
-				totalPostsId.push(element._id);
-			});
-			const communityPosts = await Promise.all(
-				currentUser.communities.map(async (communityID) => {
-					const community = await Community.findById(communityID);
-					if (community.posts) {
-						return Post.find({
-							"community.username": community.username,
-						});
-					}
-				})
-			);
-			const allPosts = userPosts.concat(...friendPosts);
-			communityPosts.forEach((element) => {
-				if (!totalPostsId.includes(element._id)) {
-					allPosts.concat(...element);
+					const communityPosts = currentUser.communities.filter(
+						async (communityID) => {
+							const community = await Community.findById(
+								communityID
+							);
+							if (community.posts) {
+								return Post.find({
+									"community.username": community.username,
+								});
+							}
+						}
+					);
+					const allPosts = userPosts.concat(...friendPosts);
+					communityPosts.forEach((element) => {
+						if (!totalPostsId.includes(element._id)) {
+							allPosts.concat(element);
+						}
+					});
+					res.status(200).json({
+						posts: allPosts,
+						message: "Posts successfully fetched",
+						success: true,
+					});
+				} else {
+					res.status(200).json({
+						posts: [],
+						message: "Posts successfully fetched",
+						success: true,
+					});
 				}
-			});
-			res.json({
-				posts: allPosts,
-				message: "Posts successfully fetched",
-				success: true,
 			});
 		} catch (err) {
 			res.status(500).json({ message: err.message, success: false });
@@ -375,13 +416,35 @@ postRouter.put(
 	passport.authenticate("jwt", { session: false }),
 	async (req, res) => {
 		try {
+			var d = new Date();
+			var y = d.getFullYear();
+			var m = d.getMonth();
 			const comment = new Comment(req.body);
 			comment.author.username = req.user.username;
 			comment.author.profilePicture = req.user.profilePicture;
 			await comment.save();
 			await Post.findByIdAndUpdate(req.params.id, {
 				$push: { comments: comment },
-			}).then(() => {
+			}).then(async () => {
+				const dataFind = await Data.find({ year: y });
+				if (dataFind.length > 0) {
+					var newCount = dataFind[0].comments;
+					newCount[m] += 1;
+					await Data.findByIdAndUpdate(dataFind[0]._id, {
+						$set: { comments: newCount },
+					});
+				} else {
+					const dataCreate = new Data({
+						year: y,
+						users: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+						posts: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+						communities: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+						reports: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+						comments: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+					});
+					dataCreate.comments[m] = 1;
+					dataCreate.save();
+				}
 				res.status(200).json({
 					message: "Commented",
 					success: true,

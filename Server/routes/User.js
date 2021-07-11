@@ -11,6 +11,7 @@ const User = require("../models/User");
 const sendEmail = require("../utils/sendMail");
 const crypto = require("crypto");
 const Post = require("../models/Post");
+const Data = require("../models/Data");
 
 const signToken = (userID) => {
 	return JWT.sign(
@@ -25,6 +26,9 @@ const signToken = (userID) => {
 
 //register user
 userRouter.post("/register", (req, res) => {
+	var d = new Date();
+	var y = d.getFullYear();
+	var m = d.getMonth();
 	const { username, email, password } = req.body;
 	User.findOne(
 		{
@@ -43,17 +47,39 @@ userRouter.post("/register", (req, res) => {
 				});
 			else {
 				const newUser = new User({ username, email, password });
-				newUser.save((err) => {
+				newUser.save(async (err) => {
 					if (err)
 						res.status(500).json({
 							message: "Email Already Exists for another user",
 							success: false,
 						});
-					else
+					else {
+						const dataFind = await Data.find({ year: y });
+						if (dataFind.length > 0) {
+							var newCount = dataFind[0].users;
+							newCount[m] += 1;
+							await Data.findByIdAndUpdate(dataFind[0]._id, {
+								$set: { users: newCount },
+							});
+						} else {
+							const dataCreate = new Data({
+								year: y,
+								users: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+								posts: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+								communities: [
+									0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+								],
+								reports: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+								comments: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+							});
+							dataCreate.users[m] = 1;
+							dataCreate.save();
+						}
 						res.status(201).json({
 							message: "Account Successfully Created",
 							success: true,
 						});
+					}
 				});
 			}
 		}
@@ -97,6 +123,28 @@ userRouter.delete(
 	passport.authenticate("jwt", { session: false }),
 	async (req, res) => {
 		if (req.user.role == "admin" && req.user._id != req.params.id) {
+			const user = await User.findById(req.params.id);
+			if (user) {
+				user.followers.forEach(async (element) => {
+					var user1 = await User.findById(element);
+					if (user1) {
+						await user1.updateOne({
+							$pull: { following: req.params.id },
+						});
+					}
+				});
+				user.following.forEach(async (element) => {
+					var user1 = await User.findById(element);
+					if (user1) {
+						await user1.updateOne({
+							$pull: { followers: req.params.id },
+						});
+					}
+				});
+				user.posts.forEach(async (element) => {
+					await Post.findByIdAndRemove(element);
+				});
+			}
 			await User.findByIdAndDelete(req.params.id);
 			res.status(200).json({ message: "Account Deleted", success: true });
 		} else if (req.user._id == req.params.id) {

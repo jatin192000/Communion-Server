@@ -26,10 +26,12 @@ const userRouter = require("./routes/User");
 const postRouter = require("./routes/Post");
 const adminRouter = require("./routes/Admin");
 const communityRouter = require("./routes/Community");
+const reportRouter = require("./routes/Report");
 app.use("/user", userRouter);
 app.use("/post", postRouter);
 app.use("/admin", adminRouter);
 app.use("/community", communityRouter);
+app.use("/report", reportRouter);
 app.listen(process.env.PORT, () => {
 	console.log(`express server started at port ${process.env.PORT}`);
 });
